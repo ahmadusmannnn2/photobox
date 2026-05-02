@@ -51,6 +51,7 @@ class TransactionController extends Controller
         $request->validate([
             'images_base64' => 'required|array',
             'images_base64.*' => 'required|string',
+            'gif_base64' => 'nullable|string'
         ]);
 
         $transaction = Transaction::where('uuid', $uuid)->firstOrFail();
@@ -70,9 +71,16 @@ class TransactionController extends Controller
             ]);
             
             if ($index === 0) {
-                // Backward compatibility or quick ref
                 $transaction->update(['result_image_path' => $fileName]);
             }
+        }
+
+        if ($request->filled('gif_base64')) {
+            $gif_parts = explode(";base64,", $request->gif_base64);
+            $gif_base64 = base64_decode($gif_parts[1]);
+            $gifName = 'results/' . $transaction->uuid . '_' . time() . '.gif';
+            Storage::disk('public')->put($gifName, $gif_base64);
+            $transaction->update(['gif_path' => $gifName]);
         }
 
         return response()->json([

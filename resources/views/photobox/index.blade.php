@@ -134,8 +134,13 @@
             <div class="flex-1 relative flex items-center justify-center p-4 md:p-8 bg-zinc-900 overflow-hidden">
                 <div id="camera-container" class="relative w-full max-w-[min(100%,60vh)] md:max-w-2xl aspect-[3/4] md:aspect-[4/3] bg-black border-4 md:border-8 border-black rounded-xl shadow-[4px_4px_0_0_rgba(0,0,0,1)] md:shadow-[8px_8px_0_0_rgba(0,0,0,1)] overflow-hidden isolate mx-auto">
                     <!-- Video needs object-cover to fill aspect ratio without stretching on mobile -->
-                    <video id="video-feed" autoplay playsinline class="absolute inset-0 w-full h-full object-cover -scale-x-100"></video>
+                    <video id="video-feed" autoplay playsinline class="absolute inset-0 w-full h-full object-cover -scale-x-100 transition-all duration-300"></video>
                     
+                    <!-- Sticker Overlay Element -->
+                    <div id="sticker-overlay" class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 hidden">
+                        <span id="active-sticker" class="text-7xl md:text-9xl drop-shadow-lg"></span>
+                    </div>
+
                     <!-- Hidden Canvas for capturing raw photo -->
                     <canvas id="raw-canvas" class="hidden"></canvas>
                     
@@ -144,6 +149,24 @@
                     </div>
 
                     <div id="flash-effect" class="absolute inset-0 bg-white z-30 opacity-0 pointer-events-none transition-opacity duration-150"></div>
+                </div>
+
+                <!-- Filters & Stickers Toolbar -->
+                <div class="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-30 bg-white/10 backdrop-blur-md p-2 rounded-xl border-2 border-white/20 w-11/12 md:w-auto max-w-lg">
+                    <div class="flex items-center gap-2 overflow-x-auto pb-1 hide-scrollbar">
+                        <span class="text-white font-bold text-xs uppercase shrink-0">Filter:</span>
+                        <button class="filter-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-yellow-400 focus:border-yellow-400 whitespace-nowrap" data-filter="none">Normal</button>
+                        <button class="filter-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-yellow-400 focus:border-yellow-400 whitespace-nowrap" data-filter="grayscale(100%)">B&W</button>
+                        <button class="filter-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-yellow-400 focus:border-yellow-400 whitespace-nowrap" data-filter="sepia(80%)">Retro</button>
+                        <button class="filter-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-yellow-400 focus:border-yellow-400 whitespace-nowrap" data-filter="hue-rotate(90deg) contrast(1.2)">Cyber</button>
+                    </div>
+                    <div class="flex items-center gap-2 overflow-x-auto pb-1 hide-scrollbar">
+                        <span class="text-white font-bold text-xs uppercase shrink-0">Sticker:</span>
+                        <button class="sticker-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-pink-400 focus:border-pink-400 whitespace-nowrap" data-sticker="none">Off</button>
+                        <button class="sticker-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-pink-400 focus:border-pink-400 whitespace-nowrap" data-sticker="👑">Crown 👑</button>
+                        <button class="sticker-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-pink-400 focus:border-pink-400 whitespace-nowrap" data-sticker="😎">Glasses 😎</button>
+                        <button class="sticker-btn bg-black text-white px-3 py-1 rounded-full text-xs font-bold border-2 border-transparent hover:border-pink-400 focus:border-pink-400 whitespace-nowrap" data-sticker="🎀">Ribbon 🎀</button>
+                    </div>
                 </div>
 
                 <button id="btn-shoot" class="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 bg-yellow-400 hover:bg-yellow-500 text-black font-black py-3 md:py-4 px-8 md:px-12 rounded-full border-4 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] md:shadow-[6px_6px_0_0_rgba(0,0,0,1)] hover:translate-y-[2px] hover:translate-x-[2px] transition uppercase text-xl md:text-3xl disabled:opacity-50 z-30 flex items-center gap-2">
@@ -207,6 +230,7 @@
     </div>
 </div>
 
+<script src="{{ asset('gif.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -251,6 +275,11 @@
         const mergeCanvas = document.getElementById('merge-canvas');
         const templateImgObj = document.getElementById('template-img');
 
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const stickerBtns = document.querySelectorAll('.sticker-btn');
+        const stickerOverlay = document.getElementById('sticker-overlay');
+        const activeSticker = document.getElementById('active-sticker');
+
         const qrLoading = document.getElementById('qr-loading');
         const qrImage = document.getElementById('qr-image');
         const btnFinish = document.getElementById('btn-finish');
@@ -259,8 +288,8 @@
         let selectedPackageId = null;
         let selectedDuration = 0;
         let selectedMaxPrints = 0;
-        let selectedTemplateId = null;
-        let selectedTemplateSrc = null;
+        let selectedTemplateIds = [];
+        let selectedTemplateSrcs = [];
         let currentTransactionUuid = null;
         
         let rawPhotos = []; // array of base64
@@ -269,6 +298,9 @@
         let sessionInterval = null;
         let paymentPollingInterval = null;
         let isShooting = false;
+        
+        let currentFilter = 'none';
+        let currentSticker = 'none';
 
         // --- 1. WELCOME -> PACKAGE ---
         steps.welcome.addEventListener('click', () => switchStep('package'));
@@ -293,20 +325,32 @@
 
         // --- 2. TEMPLATE ---
         function selectTemplate(item) {
-            templateItems.forEach(t => t.classList.remove('ring-4', 'md:ring-8', 'ring-pink-500'));
-            item.classList.add('ring-4', 'md:ring-8', 'ring-pink-500');
+            const tid = item.dataset.id;
+            const tsrc = item.dataset.src;
             
-            selectedTemplateId = item.dataset.id;
-            selectedTemplateSrc = item.dataset.src;
+            if(selectedTemplateIds.includes(tid)) {
+                selectedTemplateIds = selectedTemplateIds.filter(id => id !== tid);
+                selectedTemplateSrcs = selectedTemplateSrcs.filter(src => src !== tsrc);
+                item.classList.remove('ring-4', 'md:ring-8', 'ring-pink-500');
+            } else {
+                if(selectedTemplateIds.length >= selectedMaxPrints) {
+                    alert('You can only select up to ' + selectedMaxPrints + ' frames for this package.');
+                    return;
+                }
+                selectedTemplateIds.push(tid);
+                selectedTemplateSrcs.push(tsrc);
+                item.classList.add('ring-4', 'md:ring-8', 'ring-pink-500');
+            }
             
-            btnConfirmTemplate.disabled = false;
-            if(btnConfirmTemplateMobile) btnConfirmTemplateMobile.disabled = false;
+            const hasSelection = selectedTemplateIds.length > 0;
+            btnConfirmTemplate.disabled = !hasSelection;
+            if(btnConfirmTemplateMobile) btnConfirmTemplateMobile.disabled = !hasSelection;
         }
 
         templateItems.forEach(item => item.addEventListener('click', () => selectTemplate(item)));
         
         async function processTemplateSelection() {
-            if(!selectedTemplateId) return;
+            if(selectedTemplateIds.length === 0) return;
             
             btnConfirmTemplate.disabled = true;
             btnConfirmTemplate.innerText = 'Processing...';
@@ -319,12 +363,11 @@
                 const res = await fetch('{{ route("transactions.create") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
-                    body: JSON.stringify({ template_id: selectedTemplateId, package_id: selectedPackageId })
+                    body: JSON.stringify({ template_id: selectedTemplateIds[0], package_id: selectedPackageId })
                 });
                 const data = await res.json();
                 if(data.success) {
                     currentTransactionUuid = data.uuid;
-                    templateImgObj.src = selectedTemplateSrc; // Preload template image
                     switchStep('payment');
                     startPaymentPolling();
                 }
@@ -397,6 +440,30 @@
             sessionTimer.innerText = `${m}:${s}`;
         }
 
+        // --- FILTER & STICKER LOGIC ---
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                video.style.filter = currentFilter === 'none' ? '' : currentFilter;
+                filterBtns.forEach(b => b.classList.remove('border-yellow-400'));
+                btn.classList.add('border-yellow-400');
+            });
+        });
+
+        stickerBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentSticker = btn.dataset.sticker;
+                if (currentSticker === 'none') {
+                    stickerOverlay.classList.add('hidden');
+                } else {
+                    stickerOverlay.classList.remove('hidden');
+                    activeSticker.innerText = currentSticker;
+                }
+                stickerBtns.forEach(b => b.classList.remove('border-pink-400'));
+                btn.classList.add('border-pink-400');
+            });
+        });
+
         btnShoot.addEventListener('click', () => {
             if(isShooting) return;
             isShooting = true;
@@ -429,10 +496,25 @@
             rawCanvas.height = videoHeight;
             const ctx = rawCanvas.getContext('2d');
             
-            // Draw flipped video
+            // Draw flipped video with filter
+            if (currentFilter !== 'none') {
+                ctx.filter = currentFilter;
+            }
             ctx.translate(videoWidth, 0);
             ctx.scale(-1, 1);
             ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+            
+            // Reset transforms for stickers
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.filter = 'none';
+
+            if (currentSticker !== 'none') {
+                // Draw sticker dead center
+                ctx.font = `${videoHeight * 0.3}px sans-serif`; // 30% of height
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(currentSticker, videoWidth / 2, videoHeight / 2);
+            }
             
             const dataURL = rawCanvas.toDataURL('image/png');
             rawPhotos.push(dataURL);
@@ -543,27 +625,63 @@
             mergeCanvas.height = img.height;
             const ctx = mergeCanvas.getContext('2d');
 
+            let templateIndex = 0;
             for (let idx of selectedPhotoIndices) {
                 const rImg = new Image();
                 rImg.src = rawPhotos[idx];
                 await new Promise(r => rImg.onload = r);
                 ctx.drawImage(rImg, 0, 0, mergeCanvas.width, mergeCanvas.height);
 
-                ctx.drawImage(templateImgObj, 0, 0, mergeCanvas.width, mergeCanvas.height);
+                const currentTemplateSrc = selectedTemplateSrcs[templateIndex % selectedTemplateSrcs.length];
+                const tImg = new Image();
+                tImg.crossOrigin = 'anonymous';
+                tImg.src = currentTemplateSrc;
+                await new Promise(r => tImg.onload = r);
+                ctx.drawImage(tImg, 0, 0, mergeCanvas.width, mergeCanvas.height);
 
                 finalImagesBase64.push(mergeCanvas.toDataURL('image/png'));
+                templateIndex++;
             }
 
-            uploadFinalResults(finalImagesBase64);
+            // --- GIF GENERATION ---
+            const gif = new GIF({
+                workers: 2,
+                quality: 10,
+                width: mergeCanvas.width,
+                height: mergeCanvas.height,
+                workerScript: '{{ asset("gif.worker.js") }}'
+            });
+
+            // Add frames
+            for (const base64 of finalImagesBase64) {
+                const fImg = new Image();
+                fImg.src = base64;
+                await new Promise(r => fImg.onload = r);
+                gif.addFrame(fImg, {delay: 500}); // 500ms per frame
+            }
+
+            gif.on('finished', function(blob) {
+                const reader = new FileReader();
+                reader.readAsDataURL(blob); 
+                reader.onloadend = function() {
+                    const gifBase64 = reader.result;
+                    uploadFinalResults(finalImagesBase64, gifBase64);
+                }
+            });
+
+            gif.render();
         });
 
         // --- 6. UPLOAD & RESULT ---
-        async function uploadFinalResults(base64Array) {
+        async function uploadFinalResults(base64Array, gifBase64 = null) {
             try {
+                const payload = { images_base64: base64Array };
+                if (gifBase64) payload.gif_base64 = gifBase64;
+
                 const res = await fetch(`/api/transactions/${currentTransactionUuid}/upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
-                    body: JSON.stringify({ images_base64: base64Array })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 

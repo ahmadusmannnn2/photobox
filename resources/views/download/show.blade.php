@@ -19,6 +19,19 @@
             <p class="font-bold text-gray-500 mb-6">Thanks for using our photobooth.</p>
             
             <div class="grid grid-cols-1 gap-6 mb-6">
+                @if($transaction->gif_path)
+                <div class="border-4 border-black rounded-lg overflow-hidden bg-pink-200">
+                    <div class="bg-black text-white font-black uppercase py-1 px-2 text-xs flex justify-between items-center">
+                        <span>🎞️ Animated GIF</span>
+                    </div>
+                    <img src="{{ asset('storage/' . $transaction->gif_path) }}" class="w-full h-auto object-contain">
+                    <div class="p-2 bg-white border-t-4 border-black">
+                        <a href="{{ asset('storage/' . $transaction->gif_path) }}" download="Photobox_{{ $transaction->uuid }}.gif" class="block w-full bg-pink-400 hover:bg-pink-500 text-black font-black py-3 px-2 rounded-xl border-4 border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition uppercase text-sm">
+                            ⬇️ Download GIF
+                        </a>
+                    </div>
+                </div>
+                @endif
                 @foreach($transaction->photos as $photo)
                 <div class="border-4 border-black rounded-lg overflow-hidden bg-zinc-200">
                     <img src="{{ asset('storage/' . $photo->image_path) }}" class="w-full h-auto object-contain">

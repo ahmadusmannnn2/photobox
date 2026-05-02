@@ -12,6 +12,7 @@ class Transaction extends Model
         'template_id',
         'status',
         'result_image_path',
+        'gif_path'
     ];
 
     public function template()
